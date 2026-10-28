@@ -50,6 +50,45 @@
     el: 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩαβγδεζηθικλμνξοπρςστυφχψω'
   };
 
+  /* Символы, которые встречаются в образцах. Проверяем их напрямую:
+     «частичного» покрытия для показа текста недостаточно — пропавшие буквы
+     браузер подменит чужим шрифтом, и образец соврёт. */
+  var SAMPLE_CYR = 'АаБбҐґЄєЇїБыстраяжлнцидкву0123';
+  var SAMPLE_LAT = 'AaBbCcDdEeThquickbrownfox0123';
+
+  /* Шрифты других письменностей: показываем их родным алфавитом,
+     иначе дизайнер видит «без букв» там, где букв полно. */
+  /* Порядок важен: японский и китайский шрифты обычно включают греческий
+     как довесок, поэтому специфичные письменности проверяем раньше общих. */
+  var SCRIPTS = [
+    { id: 'hangul', text: '한글 가나다라' },
+    { id: 'kana', text: 'あいうえ アイウエ' },
+    { id: 'han', text: '漢字 永東國' },
+    { id: 'thai', text: 'กขคง จฉชญ' },
+    { id: 'devanagari', text: 'अआइई कखगघ' },
+    { id: 'arabic', text: 'ابجد هوز' },
+    { id: 'hebrew', text: 'אבגד הוזח' },
+    { id: 'armenian', text: 'Աա Բբ Գգ Դդ' },
+    { id: 'georgian', text: 'აბგდ ევზთ' },
+    { id: 'greek', text: 'Αα Ββ Γγ Δδ Εε' }
+  ];
+
+  function covers(font, chars) {
+    if (!font.cmapOk) return false;
+    for (var i = 0; i < chars.length; i++) {
+      if (!font.has(chars.codePointAt(i))) return false;
+    }
+    return true;
+  }
+
+  /* Какая письменность у шрифта, если это не латиница и не кириллица. */
+  function scriptOf(font) {
+    for (var i = 0; i < SCRIPTS.length; i++) {
+      if (covers(font, SCRIPTS[i].text.replace(/\s/g, ''))) return SCRIPTS[i].id;
+    }
+    return '';
+  }
+
   function coverage(font, chars) {
     if (!font.cmapOk) return 'unchecked';
     var hit = 0;
@@ -268,7 +307,10 @@
       cssFamily: '',
       latin: coverage(f, SETS.latin),
       cyr: coverage(f, SETS.cyr),
-      ua: coverage(f, SETS.ua)
+      ua: coverage(f, SETS.ua),
+      okCyr: covers(f, SAMPLE_CYR),
+      okLat: covers(f, SAMPLE_LAT),
+      script: scriptOf(f)
     };
     if (!fam.faces.some(function (x) { return x.style === face.style && x.ps === face.ps; })) fam.faces.push(face);
 
@@ -571,6 +613,73 @@
     });
   }
 
+  /* Какой текст показывать образцом. Шрифт без кириллицы браузер молча
+     подменит системным — выглядит так, будто кириллица есть. Поэтому
+     подбираем набор под реальное покрытие и честно это подписываем. */
+  function hasCyrillic(text) { return /[\u0400-\u04FF]/.test(text); }
+  function hasLatin(text) { return /[A-Za-z]/.test(text); }
+
+  /* Покрытие берём у того начертания, которым рисуем образец, а не худшее
+     по семейству: одни орнаменты внутри семейства не должны занижать остальные. */
+  function sampleCoverage(f, key, face) {
+    var manual = languageEdits[f.name] && languageEdits[f.name][key];
+    if (manual) return manual;
+    var src = face || sampleFace(f);
+    return (src && src[key]) || f.langs[key] || 'unchecked';
+  }
+
+  function sampleFor(f, which, face) {
+    var src = face || sampleFace(f);
+    var manualCyr = languageEdits[f.name] && languageEdits[f.name].cyr;
+    var cyr = manualCyr ? manualCyr === 'yes' : Boolean(src && src.okCyr);
+    var ua = cyr;
+    var lat = Boolean(src && src.okLat);
+
+    if (customText) {
+      var needCyr = hasCyrillic(customText);
+      var needLat = hasLatin(customText);
+      if ((needCyr && (cyr || ua)) || (!needCyr && needLat && lat) || (!needCyr && !needLat)) {
+        return { text: customText, note: '' };
+      }
+      if (lat) return { text: t.sampleTopLatin, note: t.fallbackLatinText };
+      if (src && src.script) {
+        var own = SCRIPTS.filter(function (x) { return x.id === src.script; })[0];
+        if (own) return { text: own.text, note: fmt(t.fallbackScript, { script: t.scripts[src.script] }) };
+      }
+      return { text: '', note: t.noLetters };
+    }
+
+    if (cyr || ua) {
+      if (which === 'two' && src && src.script && src.script !== 'greek') {
+        var own3 = SCRIPTS.filter(function (x) { return x.id === src.script; })[0];
+        if (own3) return { text: own3.text, note: '' };
+      }
+      return { text: which === 'two' ? t.sampleBottom : t.sampleTop, note: '' };
+    }
+    if (lat) {
+      // у шрифта есть и своя письменность — второй строкой показываем её,
+      // это полезнее, чем ещё одна строка латиницы
+      if (which === 'two' && src && src.script && src.script !== 'greek') {
+        var own2 = SCRIPTS.filter(function (x) { return x.id === src.script; })[0];
+        if (own2) return { text: own2.text, note: '' };
+      }
+      return {
+        text: which === 'two' ? t.sampleBottomLatin : t.sampleTopLatin,
+        note: which === 'two' ? '' : t.fallbackLatin
+      };
+    }
+    if (src && src.script) {
+      var sc = SCRIPTS.filter(function (x) { return x.id === src.script; })[0];
+      if (sc) {
+        return {
+          text: which === 'two' ? '' : sc.text,
+          note: which === 'two' ? '' : fmt(t.fallbackScript, { script: t.scripts[src.script] })
+        };
+      }
+    }
+    return { text: '', note: which === 'two' ? '' : t.noLetters };
+  }
+
   function sampleMarkup(f, text, extraClass) {
     var css = f.system ? registerSample(f) : f.cssFamily;
     if (!css) return extraClass ? '' : '<div class="sample nosample">' + esc(t.samplePending) + '</div>';
@@ -578,22 +687,34 @@
       '" style="font-family:\'' + esc(css) + '\'">' + esc(text) + '</div>';
   }
 
+  function sampleBlock(f, which) {
+    var s = sampleFor(f, which);
+    if (!s.text) {
+      return which === 'two' ? '' : '<div class="sample nosample">' + esc(s.note) + '</div>';
+    }
+    return sampleMarkup(f, s.text, which === 'two' ? 'two' : '') +
+      (s.note ? '<div class="samplenote">' + esc(s.note) + '</div>' : '');
+  }
+
   function topSample(f) {
-    if (customText) return sampleMarkup(f, customText);
-    return sampleMarkup(f, t.sampleTop) + sampleMarkup(f, t.sampleBottom, 'two');
+    if (customText) return sampleBlock(f, 'top');
+    return sampleBlock(f, 'top') + sampleBlock(f, 'two');
   }
 
   /* Все начертания семейства одним списком — чтобы сравнить свой текст
      в Regular, Bold, Italic и так далее. */
   function facesPreview(f) {
-    var text = customText || t.sampleTop;
     var rows = f.faces.map(function (face, idx) {
       var css = registerFaceSample(f, face, idx);
-      return '<div class="facerow"><span class="facename">' + esc(face.style) + '</span>' +
-        (css
-          ? '<div class="sample facesample" data-sample="face" style="font-family:\'' + esc(css) + '\'">' + esc(text) + '</div>'
-          : '<div class="facesample nosample">' + esc(t.faceMissing) + '</div>') +
-        '</div>';
+      var s = sampleFor(f, 'top', face);
+      var body;
+      if (!css) body = '<div class="facesample nosample">' + esc(t.faceMissing) + '</div>';
+      else if (!s.text) body = '<div class="facesample nosample">' + esc(s.note) + '</div>';
+      else {
+        body = '<div class="sample facesample" data-sample="face" style="font-family:\'' + esc(css) + '\'">' +
+          esc(s.text) + '</div>';
+      }
+      return '<div class="facerow"><span class="facename">' + esc(face.style) + '</span>' + body + '</div>';
     }).join('');
     return '<div class="faces">' + rows + '</div>';
   }
@@ -692,7 +813,7 @@
     return '<tr>' +
       '<td><button class="star' + (isFav(f) ? ' on' : '') + '" data-fav="' + i + '">' + (isFav(f) ? '★' : '☆') + '</button></td>' +
       '<td><div class="fontname">' + esc(f.name) + '</div><div class="foundry">' + esc(f.foundry || t.foundryUnknown) + '</div></td>' +
-      '<td>' + sampleMarkup(f, customText || t.sampleTop) + '</td>' +
+      '<td>' + sampleBlock(f, 'top') + '</td>' +
       '<td>' + f.faces.length + '</td>' +
       '<td><div class="pills">' + langPills(f) + '</div></td>' +
       '<td>' + statusSelect(f, i) + '</td>' +

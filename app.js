@@ -643,6 +643,24 @@
 
   var linkStatus = read('fonts_link_status', {});
 
+  /* Легальные площадки: там шрифт либо продают, либо раздают с лицензией.
+     Проверено 28.10.2026 — у каждой работает поиск по названию. */
+  var SHOPS = [
+    { name: 'MyFonts', url: 'https://www.myfonts.com/search?query=' },
+    { name: 'Adobe Fonts', url: 'https://fonts.adobe.com/search?query=' },
+    { name: 'Fontspring', url: 'https://www.fontspring.com/search?q=' },
+    { name: 'Linotype', url: 'https://www.linotype.com/search?query=' },
+    { name: 'Type Network', url: 'https://typenetwork.com/search?q=' },
+    { name: 'TypeTogether', url: 'https://www.type-together.com/search?q=' }
+  ];
+
+  var FREE_SOURCES = [
+    { name: 'Google Fonts', url: 'https://fonts.google.com/?query=' },
+    { name: 'Font Squirrel', url: 'https://www.fontsquirrel.com/fonts/list/find_fonts?q%5Bterm%5D=' },
+    { name: 'Fontshare', url: 'https://www.fontshare.com/?q=' },
+    { name: 'Velvetyne', url: 'https://velvetyne.fr/' }
+  ];
+
   function domainOf(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); }
     catch (e) { return ''; }
@@ -870,11 +888,19 @@
       html += '<div class="warnline">' + esc(t.deadHint) + '</div>';
     }
 
-    var search = [];
-    search.push('<a href="https://www.google.com/search?q=' + query + '" target="_blank" rel="noopener noreferrer">Google</a>');
-    search.push('<a href="https://fonts.google.com/?query=' + encodeURIComponent(f.name) + '" target="_blank" rel="noopener noreferrer">Google Fonts</a>');
-    search.push('<a href="https://www.myfonts.com/search?query=' + encodeURIComponent(f.name) + '" target="_blank" rel="noopener noreferrer">MyFonts</a>');
-    html += '<div class="links">' + search.join('') + '</div>';
+    var name = encodeURIComponent(f.name);
+    var list = function (items) {
+      return '<div class="links">' + items.map(function (x) {
+        return '<a href="' + esc(x.url + (x.url.indexOf('=') === -1 ? '' : name)) +
+          '" target="_blank" rel="noopener noreferrer">' + esc(x.name) + '</a>';
+      }).join('') + '</div>';
+    };
+
+    html += '<div class="sublabel">' + esc(t.whereToBuy) + '</div>' + list(SHOPS);
+    html += '<div class="sublabel">' + esc(t.whereFree) + '</div>' + list(FREE_SOURCES);
+    html += '<div class="sublabel">' + esc(t.justSearch) + '</div>' +
+      '<div class="links"><a href="https://www.google.com/search?q=' + query +
+      '" target="_blank" rel="noopener noreferrer">Google</a></div>';
     return html;
   }
 

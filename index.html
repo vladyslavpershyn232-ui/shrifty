@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шрифты с моего ноутбука</title>
+<meta name="description" content="Лицензии, языки и права использования шрифтов, установленных на вашем компьютере.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-family='Georgia,serif'>A</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="headrow">
+      <div>
+        <h1 id="title">Шрифты с моего ноутбука</h1>
+        <p class="lead" id="lead"></p>
+      </div>
+      <div class="headtools">
+        <div class="seg" role="group" aria-label="Мова / Язык">
+          <button type="button" data-setlang="uk">УКР</button>
+          <button type="button" data-setlang="ru">РУС</button>
+        </div>
+        <button type="button" class="iconbtn" id="theme" aria-label="Тема">☾</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="sourcebar">
+      <button type="button" id="scan" class="btn primary">Показать мои шрифты</button>
+      <button type="button" id="pickfolder" class="btn">Выбрать папку</button>
+      <div id="drop"></div>
+    </div>
+    <input type="file" id="filepick" multiple accept=".ttf,.otf,.ttc,.otc,.woff" hidden>
+    <input type="file" id="restorefile" accept=".json,application/json" hidden>
+    <p class="note" id="note"></p>
+    <div id="progress"><div class="bar"><i id="progressbar"></i></div><div id="progresstext"></div></div>
+    <div id="message"></div>
+  </section>
+
+  <p class="live hidden" id="live"></p>
+
+  <section class="stats">
+    <div class="stat"><span id="statFamiliesLabel"></span><b id="statFamilies">—</b></div>
+    <div class="stat"><span id="statFacesLabel"></span><b id="statFaces">—</b></div>
+    <div class="stat"><span id="statUnknownLabel"></span><b id="statUnknown">—</b></div>
+    <div class="stat"><span id="statManualLabel"></span><b id="statManual">—</b></div>
+  </section>
+
+  <section class="filters hidden" id="filters">
+    <div class="filterrow">
+      <label class="search"><input id="search" type="search" placeholder="Поиск…"></label>
+      <select id="alphabet"></select>
+      <select id="sort"></select>
+      <div class="seg" role="group">
+        <button type="button" id="viewGrid" aria-pressed="true">Плитками</button>
+        <button type="button" id="viewTable" aria-pressed="false">Списком</button>
+      </div>
+    </div>
+    <div class="textrow">
+      <label class="textfield">
+        <span id="sampletextlabel"></span>
+        <input id="sampletext" type="text" maxlength="120">
+      </label>
+      <button type="button" id="resettext" class="minibtn"></button>
+      <label class="sizefield">
+        <span id="sizelabel"></span>
+        <input id="sizerange" type="range" min="14" max="72" step="1" value="30">
+        <b id="sizevalue">30</b>
+      </label>
+    </div>
+    <div class="chips" id="cats"></div>
+    <div class="subtools">
+      <button type="button" id="backup" class="minibtn"></button>
+      <button type="button" id="restore" class="minibtn"></button>
+      <button type="button" id="exportCSV" class="minibtn"></button>
+      <button type="button" id="clearAll" class="minibtn"></button>
+    </div>
+  </section>
+
+  <p id="count"></p>
+  <section id="results"></section>
+
+  <footer><p id="disclaimer"></p></footer>
+</div>
+
+<script src="fontparse.js"></script>
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

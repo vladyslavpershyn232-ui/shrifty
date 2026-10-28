@@ -336,6 +336,13 @@
     fam.rule = classify(fam);
     fam.rights = rights(fam);
     fam.faces.sort(function (a, b) { return a.style.localeCompare(b.style); });
+    /* Языки семейства считаем по основному начертанию, а не по худшему:
+       одни орнаменты внутри семейства не должны объявлять весь шрифт безбуквенным.
+       Разбивка по начертаниям всё равно видна в подробностях. */
+    var main = sampleFace(fam);
+    if (main) {
+      fam.langs = { latin: main.latin, cyr: main.cyr, ua: main.ua };
+    }
     return fam;
   }
 
@@ -553,6 +560,12 @@
   function loadCatalog() {
     var saved = read('fonts_catalog', null);
     if (!saved || !Array.isArray(saved.families) || !saved.families.length) return false;
+    // в старом кэше нет данных о покрытии образцов — он бесполезен, сканируем заново
+    var sample = saved.families[0].faces && saved.families[0].faces[0];
+    if (!sample || sample.okLat === undefined) {
+      localStorage.removeItem('fonts_catalog');
+      return false;
+    }
     DATA = saved.families.map(function (f) {
       f.id = nextId++;
       f.blobRef = null;
@@ -596,6 +609,25 @@
     return o || f.langs[key] || 'unchecked';
   }
   function isFav(f) { return favorites.has(f.name.toLocaleLowerCase()); }
+
+  /* Фильтр по алфавитам. «Только латиница» — это именно отсутствие кириллицы,
+     а не просто её наличие, иначе выборка теряет смысл. */
+  function matchesAlphabet(f, mode) {
+    var lat = langValue(f, 'latin') === 'yes';
+    var cyr = langValue(f, 'cyr') === 'yes';
+    var ua = langValue(f, 'ua') === 'yes';
+    var face = sampleFace(f);
+    var script = face && face.script;
+    var unchecked = langValue(f, 'latin') === 'unchecked' && langValue(f, 'cyr') === 'unchecked';
+
+    if (mode === 'latin-only') return lat && !cyr;
+    if (mode === 'cyr-only') return cyr && !lat;
+    if (mode === 'both') return lat && cyr;
+    if (mode === 'ua') return ua;
+    if (mode === 'other') return !lat && !cyr && Boolean(script);
+    if (mode === 'unknown') return unchecked || (!lat && !cyr && !script);
+    return true;
+  }
 
   /* ---------- отрисовка ---------- */
 
@@ -866,8 +898,7 @@
     var shown = DATA.filter(function (f) {
       if (activeCategory === 'favorites') { if (!isFav(f)) return false; }
       else if (activeCategory !== 'all' && categoryOf(f) !== activeCategory) return false;
-      if (alphabet === 'unknown') { if (langValue(f, 'ua') !== 'unchecked') return false; }
-      else if (alphabet && langValue(f, alphabet) !== 'yes') return false;
+      if (alphabet && !matchesAlphabet(f, alphabet)) return false;
       if (q) {
         var hay = [f.name, f.foundry].concat(f.faces.map(function (x) { return x.style; })).join(' ').toLocaleLowerCase();
         if (hay.indexOf(q) === -1) return false;
@@ -1027,12 +1058,16 @@
     $('disclaimer').textContent = t.disclaimer;
     $('viewGrid').textContent = t.viewGrid;
     $('viewTable').textContent = t.viewTable;
+    var alphabetValue = $('alphabet').value || '';
     $('alphabet').innerHTML =
       '<option value="">' + esc(t.allAlphabets) + '</option>' +
-      '<option value="ua">' + esc(t.langUaFull) + '</option>' +
-      '<option value="cyr">' + esc(t.langCyrFull) + '</option>' +
-      '<option value="latin">' + esc(t.langLatinFull) + '</option>' +
-      '<option value="unknown">' + esc(t.langUnknown) + '</option>';
+      '<option value="latin-only">' + esc(t.onlyLatin) + '</option>' +
+      '<option value="cyr-only">' + esc(t.onlyCyr) + '</option>' +
+      '<option value="both">' + esc(t.latinAndCyr) + '</option>' +
+      '<option value="ua">' + esc(t.uaOnly) + '</option>' +
+      '<option value="other">' + esc(t.otherScripts) + '</option>' +
+      '<option value="unknown">' + esc(t.notDetected) + '</option>';
+    $('alphabet').value = alphabetValue;
     var sortValue = $('sort').value || 'name';
     $('sort').innerHTML =
       '<option value="name">' + esc(t.sortName) + '</option>' +

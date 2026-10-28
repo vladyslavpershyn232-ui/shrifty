@@ -99,13 +99,20 @@
   /* ---------- тип лицензии по метаданным ---------- */
 
   var LICENSE_RULES = [
-    { kind: 'ofl', label: 'SIL Open Font License', open: true, re: /sil open font license|\bOFL\b|openfontlicense/i },
-    { kind: 'apache', label: 'Apache License', open: true, re: /apache license/i },
-    { kind: 'ubuntu', label: 'Ubuntu Font Licence', open: true, re: /ubuntu font licence/i },
-    { kind: 'gpl', label: 'GNU GPL', open: true, re: /gnu general public license|\bGPL\b/i },
-    { kind: 'mit', label: 'MIT License', open: true, re: /\bMIT license\b|permission is hereby granted, free of charge/i },
-    { kind: 'cc', label: 'Creative Commons', open: true, re: /creative commons|\bCC BY\b/i },
-    { kind: 'publicdomain', label: 'Public domain', open: true, re: /public domain|unlicense/i },
+    { kind: 'ofl', label: 'SIL Open Font License', open: true, re: /sil open font license|\bOFL\b|openfontlicense/i,
+      official: 'https://openfontlicense.org/open-font-license-official-text/' },
+    { kind: 'apache', label: 'Apache License', open: true, re: /apache license/i,
+      official: 'https://www.apache.org/licenses/LICENSE-2.0' },
+    { kind: 'ubuntu', label: 'Ubuntu Font Licence', open: true, re: /ubuntu font licence/i,
+      official: 'https://ubuntu.com/legal/font-licence' },
+    { kind: 'gpl', label: 'GNU GPL', open: true, re: /gnu general public license|\bGPL\b/i,
+      official: 'https://www.gnu.org/licenses/gpl-3.0.html' },
+    { kind: 'mit', label: 'MIT License', open: true, re: /\bMIT license\b|permission is hereby granted, free of charge/i,
+      official: 'https://opensource.org/license/mit' },
+    { kind: 'cc', label: 'Creative Commons', open: true, re: /creative commons|\bCC BY\b/i,
+      official: 'https://creativecommons.org/share-your-work/cclicenses/' },
+    { kind: 'publicdomain', label: 'Public domain', open: true, re: /public domain|unlicense/i,
+      official: 'https://unlicense.org/' },
     { kind: 'personal', label: 'Personal use only', open: false, re: /personal use only|for personal use|non-?commercial use only|not for commercial/i },
     { kind: 'demo', label: 'Demo / Trial', open: false, re: /\bdemo\b|\btrial\b|evaluation (?:only|purposes)|test ?drive/i },
     { kind: 'noredistribute', label: 'No redistribution', open: false, re: /may not be (?:copied|distributed|redistributed|transferred)|redistribution is (?:not )?prohibited|no redistribution/i }
@@ -629,6 +636,67 @@
     return true;
   }
 
+  /* ---------- проверка ссылок ----------
+     Напрямую узнать код ответа чужого сайта браузер не даёт. Но если домен
+     мёртвый, запрос падает на уровне сети — это и ловим. Поэтому формулировки
+     осторожные: «отвечает» и «не отвечает», а не «ссылка рабочая». */
+
+  var linkStatus = read('fonts_link_status', {});
+
+  function domainOf(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); }
+    catch (e) { return ''; }
+  }
+
+  function archiveUrl(url) { return 'https://web.archive.org/web/*/' + url; }
+
+  async function probeDomain(domain) {
+    var cached = linkStatus[domain];
+    if (cached && Date.now() - cached.at < 7 * 24 * 3600 * 1000) return cached.state;
+    var state = 'unknown';
+    try {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 8000);
+      try {
+        await fetch('https://' + domain + '/', { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' });
+        state = 'alive';
+      } finally { clearTimeout(timer); }
+    } catch (e) {
+      state = e && e.name === 'AbortError' ? 'unknown' : 'dead';
+    }
+    linkStatus[domain] = { state: state, at: Date.now() };
+    write('fonts_link_status', linkStatus);
+    return state;
+  }
+
+  async function checkFamilyLinks(f, index) {
+    var urls = [f.license.url, f.license.vendorUrl].filter(function (u) { return /^https?:/i.test(u || ''); });
+    var domains = [];
+    urls.forEach(function (u) {
+      var d = domainOf(u);
+      if (d && domains.indexOf(d) === -1) domains.push(d);
+    });
+    if (!domains.length) return;
+    var btn = document.querySelector('[data-checklinks="' + index + '"]');
+    if (btn) { btn.disabled = true; btn.textContent = t.checking; }
+    for (var i = 0; i < domains.length; i++) await probeDomain(domains[i]);
+    render();
+  }
+
+  function linkBadge(url) {
+    var d = domainOf(url);
+    var st = d && linkStatus[d];
+    if (!st) return '';
+    if (st.state === 'alive') return '<span class="pill ok">' + esc(t.linkAlive) + '</span>';
+    if (st.state === 'dead') return '<span class="pill bad">' + esc(t.linkDead) + '</span>';
+    return '<span class="pill">' + esc(t.linkUnknown) + '</span>';
+  }
+
+  function isDead(url) {
+    var d = domainOf(url);
+    return Boolean(d && linkStatus[d] && linkStatus[d].state === 'dead');
+  }
+
   /* ---------- отрисовка ---------- */
 
   var CATS = ['all', 'open', 'commercial', 'check', 'personal', 'demo', 'forbidden', 'transfer', 'favorites'];
@@ -769,15 +837,45 @@
       }).join('') + '</div>';
   }
 
-  function sourcesBlock(f) {
+  function officialLink(f) {
+    if (!f.rule.official) return '';
+    return '<div style="margin-bottom:8px"><a href="' + esc(f.rule.official) +
+      '" target="_blank" rel="noopener noreferrer">' + esc(t.officialLicense) +
+      ' · ' + esc(f.rule.label) + '</a></div>';
+  }
+
+  function fileLink(url, label) {
+    if (!/^https?:/i.test(url || '')) return '';
+    var old = /^http:/i.test(url);
+    return '<div class="linkline">' +
+      '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(label) + '</a>' +
+      linkBadge(url) +
+      (old ? '<span class="pill">' + esc(t.oldLink) + '</span>' : '') +
+      '<a class="archivelink" href="' + esc(archiveUrl(url)) + '" target="_blank" rel="noopener noreferrer">' +
+      esc(t.archive) + '</a></div>';
+  }
+
+  function sourcesBlock(f, index) {
     var query = encodeURIComponent(f.name + ' font license ' + (f.foundry || ''));
-    var links = [];
-    if (/^https?:/i.test(f.license.url)) links.push('<a href="' + esc(f.license.url) + '" target="_blank" rel="noopener noreferrer">' + esc(t.licenseInFile) + '</a>');
-    if (/^https?:/i.test(f.license.vendorUrl)) links.push('<a href="' + esc(f.license.vendorUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(t.findFoundry) + '</a>');
-    links.push('<a href="https://www.google.com/search?q=' + query + '" target="_blank" rel="noopener noreferrer">Google</a>');
-    links.push('<a href="https://fonts.google.com/?query=' + encodeURIComponent(f.name) + '" target="_blank" rel="noopener noreferrer">Google Fonts</a>');
-    links.push('<a href="https://www.myfonts.com/search?query=' + encodeURIComponent(f.name) + '" target="_blank" rel="noopener noreferrer">MyFonts</a>');
-    return '<div class="links">' + links.join('') + '</div>';
+    var html = officialLink(f);
+    html += fileLink(f.license.url, t.licenseInFile);
+    html += fileLink(f.license.vendorUrl, t.findFoundry);
+
+    var hasFileLinks = /^https?:/i.test(f.license.url || '') || /^https?:/i.test(f.license.vendorUrl || '');
+    if (hasFileLinks) {
+      html += '<button class="minibtn" data-checklinks="' + index + '" style="margin:8px 0">' +
+        esc(t.checkLinks) + '</button>';
+    }
+    if (isDead(f.license.url) || isDead(f.license.vendorUrl)) {
+      html += '<div class="warnline">' + esc(t.deadHint) + '</div>';
+    }
+
+    var search = [];
+    search.push('<a href="https://www.google.com/search?q=' + query + '" target="_blank" rel="noopener noreferrer">Google</a>');
+    search.push('<a href="https://fonts.google.com/?query=' + encodeURIComponent(f.name) + '" target="_blank" rel="noopener noreferrer">Google Fonts</a>');
+    search.push('<a href="https://www.myfonts.com/search?query=' + encodeURIComponent(f.name) + '" target="_blank" rel="noopener noreferrer">MyFonts</a>');
+    html += '<div class="links">' + search.join('') + '</div>';
+    return html;
   }
 
   function detailBlock(f, i) {
@@ -807,7 +905,7 @@
       '</div>' +
       '<div class="block"><h4>' + esc(t.licenseText) + '</h4>' +
       '<div class="lictext">' + esc(licText || t.noLicenseText) + '</div></div>' +
-      '<div class="block"><h4>' + esc(t.colSources) + '</h4>' + sourcesBlock(f) +
+      '<div class="block"><h4>' + esc(t.colSources) + '</h4>' + sourcesBlock(f, i) +
       '<div style="margin-top:6px;color:var(--ink-3)">' + esc(t.searchNote) + '</div></div>' +
       '</div>';
   }
@@ -1000,6 +1098,9 @@
     });
     each('[data-category]', function (el) {
       el.onclick = function () { activeCategory = el.dataset.category; render(); };
+    });
+    each('[data-checklinks]', function (el) {
+      el.onclick = function () { checkFamilyLinks(DATA[+el.dataset.checklinks], +el.dataset.checklinks); };
     });
   }
 

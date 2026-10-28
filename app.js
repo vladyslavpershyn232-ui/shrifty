@@ -156,6 +156,7 @@
   }
 
   var decisions = read('fonts_decisions', {});
+  var purchases = read('fonts_purchases', {});
   var languageEdits = read('fonts_language_edits', {});
   var favorites = new Set(read('fonts_favorites', []));
 
@@ -165,6 +166,7 @@
   var activeCategory = 'all';
   var view = localStorage.getItem('fonts_ui_view') || 'grid';
   var expanded = new Set();
+  var compare = new Set(read('fonts_compare', []));
   var message = null;          // {key, vars, kind}
   var customText = localStorage.getItem('fonts_ui_text') || '';
   var sampleSize = Number(localStorage.getItem('fonts_ui_size')) || 30;
@@ -431,6 +433,27 @@
 
   /* ---------- источник 1: установленные шрифты ---------- */
 
+  /* Шрифт удалили из системы — убираем его и из каталога, иначе список
+     со временем обрастает тем, чего на компьютере уже нет.
+     Семейства, принесённые файлами, не трогаем: их системе знать неоткуда. */
+  function dropMissing(faces) {
+    var alive = new Set();
+    faces.forEach(function (f) { alive.add(f.postscriptName); });
+    var before = DATA.length;
+    var removedFaces = 0;
+
+    DATA = DATA.filter(function (fam) {
+      if (!fam.system) return true;
+      var kept = fam.faces.filter(function (face) { return !face.ps || alive.has(face.ps); });
+      removedFaces += fam.faces.length - kept.length;
+      if (!kept.length) return false;
+      fam.faces = kept;
+      finish(fam);
+      return true;
+    });
+    return before - DATA.length;
+  }
+
   function knownFaceKeys() {
     var set = new Set();
     DATA.forEach(function (fam) {
@@ -466,11 +489,18 @@
       liveOn = true;
       var known = knownFaceKeys();
       var fresh = faces.filter(function (f) { return !known.has(f.postscriptName); });
+      var removed = dropMissing(faces);
 
       // Ничего не изменилось — молча выходим, таблицу не трогаем.
       if (!fresh.length) {
-        if (!opts.silent) { say('upToDate', { n: DATA.length }, 'good'); render(); }
-        else renderLive();
+        if (removed) {
+          persistCatalog();
+          say('removedFonts', { n: removed }, 'good');
+          render();
+        } else if (!opts.silent) {
+          say('upToDate', { n: DATA.length }, 'good');
+          render();
+        } else renderLive();
         return;
       }
 
@@ -929,11 +959,40 @@
       '<div class="block"><h4>' + esc(t.colLangs) + '</h4>' + langs + extraHtml +
       (languageEdits[f.name] ? '<button class="minibtn" data-resetlang="' + i + '" style="margin-top:6px">' + esc(t.resetLangs) + '</button>' : '') +
       '</div>' +
+      '<div class="block"><h4>' + esc(t.purchase) + '</h4>' + purchaseBlock(f, i) + '</div>' +
       '<div class="block"><h4>' + esc(t.licenseText) + '</h4>' +
       '<div class="lictext">' + esc(licText || t.noLicenseText) + '</div></div>' +
       '<div class="block"><h4>' + esc(t.colSources) + '</h4>' + sourcesBlock(f, i) +
       '<div style="margin-top:6px;color:var(--ink-3)">' + esc(t.searchNote) + '</div></div>' +
       '</div>';
+  }
+
+  /* Что записал производитель — одно, а чем вы докажете покупку — другое.
+     Поэтому своя запись о лицензии хранится отдельно от метаданных файла. */
+  function purchaseBlock(f, i) {
+    var p = purchases[f.name] || {};
+    var field = function (key, label, type) {
+      return '<label class="pfield"><span>' + esc(label) + '</span>' +
+        '<input type="' + (type || 'text') + '" data-purchase="' + i + '" data-field="' + key + '" value="' +
+        esc(p[key] || '') + '"></label>';
+    };
+    return '<div class="purchase">' +
+      field('where', t.purchaseWhere) +
+      field('date', t.purchaseDate, 'date') +
+      field('price', t.purchasePrice) +
+      field('ref', t.purchaseRef) +
+      field('note', t.purchaseNote) +
+      '<div class="prow">' +
+      '<button class="minibtn" data-savepurchase="' + i + '">' + esc(t.purchaseSave) + '</button>' +
+      (Object.keys(p).length ? '<button class="minibtn" data-clearpurchase="' + i + '">' + esc(t.purchaseClear) + '</button>' : '') +
+      '</div>' +
+      '<div class="hint">' + esc(t.purchaseHint) + '</div>' +
+      '</div>';
+  }
+
+  function hasPurchase(f) {
+    var p = purchases[f.name];
+    return Boolean(p && (p.where || p.date || p.price || p.ref || p.note));
   }
 
   function statusSelect(f, i) {
@@ -951,7 +1010,8 @@
     ].filter(Boolean).join(' · ');
 
     return '<article class="font">' +
-      '<div class="fonttop"><div><div class="fontname">' + esc(f.name) + '</div>' +
+      '<div class="fonttop"><div><div class="fontname">' + esc(f.name) +
+      (hasPurchase(f) ? ' <span class="pill ok">' + esc(t.purchased) + '</span>' : '') + '</div>' +
       '<div class="foundry">' + esc(f.foundry || t.foundryUnknown) + '</div></div>' +
       '<button class="star' + (isFav(f) ? ' on' : '') + '" data-fav="' + i + '" aria-label="★">' +
       (isFav(f) ? '★' : '☆') + '</button></div>' +
@@ -960,6 +1020,8 @@
       '<div class="pills">' + langPills(f) + '</div>' +
       rightsBlock(f) +
       '<div class="cardfoot">' + statusSelect(f, i) +
+      '<button class="expand' + (compare.has(f.name) ? ' on' : '') + '" data-compare="' + i + '" title="' +
+      esc(t.compare) + '">⇄</button>' +
       '<button class="expand" data-expand="' + i + '">' + (expanded.has(f.name) ? '−' : '+') + '</button></div>' +
       (expanded.has(f.name) ? detailBlock(f, i) : '') +
       '</article>';
@@ -977,6 +1039,27 @@
       '<td><button class="expand" data-expand="' + i + '">' + (expanded.has(f.name) ? '−' : '+') + '</button></td>' +
       '</tr>' +
       (expanded.has(f.name) ? '<tr><td colspan="8">' + detailBlock(f, i) + '</td></tr>' : '');
+  }
+
+  /* Список производителей собираем из самих шрифтов: у каждого показываем,
+     сколько семейств, чтобы сразу видеть, чей набор куплен пакетом. */
+  function paintFoundries(selected) {
+    var counts = {};
+    DATA.forEach(function (f) {
+      var name = f.foundry || '';
+      if (!name) return;
+      counts[name] = (counts[name] || 0) + 1;
+    });
+    var names = Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || a.localeCompare(b);
+    });
+    var html = '<option value="">' + esc(t.allFoundries) + '</option>' +
+      names.map(function (n) {
+        return '<option value="' + esc(n) + '"' + (n === selected ? ' selected' : '') + '>' +
+          esc(n.length > 34 ? n.slice(0, 33) + '…' : n) + ' · ' + counts[n] + '</option>';
+      }).join('');
+    if ($('foundry').innerHTML !== html) $('foundry').innerHTML = html;
+    $('foundry').value = selected || '';
   }
 
   function paintCategories() {
@@ -997,6 +1080,35 @@
     $('live').innerHTML = liveOn ? '<i></i>' + esc(t.liveOn) : '';
   }
 
+  function renderCompare() {
+    var names = Array.from(compare);
+    var items = DATA.filter(function (f) { return names.indexOf(f.name) !== -1; });
+    if (!items.length) { $('compare').innerHTML = ''; $('compare').classList.add('hidden'); return; }
+    $('compare').classList.remove('hidden');
+
+    var text = customText || t.sampleTop;
+    $('compare').innerHTML = '<div class="card comparebox">' +
+      '<div class="comparehead"><h3>' + esc(t.comparePanel) + '</h3>' +
+      '<button class="minibtn" id="compareClear">' + esc(t.compareClear) + '</button></div>' +
+      items.map(function (f) {
+        var s = sampleFor(f, 'top');
+        var css = f.system ? registerSample(f) : f.cssFamily;
+        return '<div class="comparerow">' +
+          '<div class="comparename">' + esc(f.name) +
+          '<span>' + esc(f.foundry || t.foundryUnknown) + '</span></div>' +
+          (css && s.text
+            ? '<div class="sample comparesample" style="font-family:\'' + esc(css) + '\'">' + esc(s.text) + '</div>'
+            : '<div class="comparesample nosample">' + esc(s.note || t.samplePending) + '</div>') +
+          '</div>';
+      }).join('') + '</div>';
+
+    $('compareClear').onclick = function () {
+      compare = new Set();
+      write('fonts_compare', []);
+      render();
+    };
+  }
+
   function render() {
     $('message').innerHTML = message
       ? '<div class="msg ' + message.kind + '">' + esc(messageText()) + '</div>' : '';
@@ -1006,6 +1118,7 @@
       ? (liveOn ? t.hintLive : t.hintHasData)
       : (typeof window.queryLocalFonts === 'function' ? t.hintChrome : t.hintOther);
 
+    renderCompare();
     if (!DATA.length) {
       $('results').innerHTML = '<div class="card empty"><b>' + esc(t.emptyTitle) + '</b>' + esc(t.emptyText) + '</div>';
       ['statFamilies', 'statFaces', 'statUnknown', 'statManual'].forEach(function (id) { $(id).textContent = '—'; });
@@ -1018,11 +1131,14 @@
 
     var q = $('search').value.trim().toLocaleLowerCase();
     var alphabet = $('alphabet').value;
+    var foundry = $('foundry').value;
+    paintFoundries(foundry);
 
     var shown = DATA.filter(function (f) {
       if (activeCategory === 'favorites') { if (!isFav(f)) return false; }
       else if (activeCategory !== 'all' && categoryOf(f) !== activeCategory) return false;
       if (alphabet && !matchesAlphabet(f, alphabet)) return false;
+      if (foundry && (f.foundry || '') !== foundry) return false;
       if (q) {
         var hay = [f.name, f.foundry].concat(f.faces.map(function (x) { return x.style; })).join(' ').toLocaleLowerCase();
         if (hay.indexOf(q) === -1) return false;
@@ -1033,7 +1149,9 @@
     $('statFamilies').textContent = DATA.length;
     $('statFaces').textContent = DATA.reduce(function (n, f) { return n + f.faces.length; }, 0);
     $('statUnknown').textContent = DATA.filter(function (f) { return categoryOf(f) === 'check'; }).length;
-    $('statManual').textContent = Object.keys(decisions).length;
+    var needCheck = DATA.filter(function (f) { return categoryOf(f) === 'check'; }).length;
+    var doneCheck = Object.keys(decisions).length;
+    $('statManual').textContent = fmt(t.ofTotal, { done: doneCheck, total: doneCheck + needCheck });
     $('count').textContent = fmt(t.shown, { shown: shown.length, total: DATA.length });
 
     if (!shown.length) {
@@ -1125,6 +1243,36 @@
     each('[data-category]', function (el) {
       el.onclick = function () { activeCategory = el.dataset.category; render(); };
     });
+    each('[data-compare]', function (el) {
+      el.onclick = function () {
+        var name = DATA[+el.dataset.compare].name;
+        if (compare.has(name)) compare.delete(name);
+        else if (compare.size < 6) compare.add(name);
+        write('fonts_compare', Array.from(compare));
+        render();
+      };
+    });
+    each('[data-savepurchase]', function (el) {
+      el.onclick = function () {
+        var i = el.dataset.savepurchase;
+        var f = DATA[+i];
+        var data = {};
+        Array.prototype.forEach.call(document.querySelectorAll('[data-purchase="' + i + '"]'), function (input) {
+          if (input.value.trim()) data[input.dataset.field] = input.value.trim();
+        });
+        if (Object.keys(data).length) purchases[f.name] = data;
+        else delete purchases[f.name];
+        write('fonts_purchases', purchases);
+        render();
+      };
+    });
+    each('[data-clearpurchase]', function (el) {
+      el.onclick = function () {
+        delete purchases[DATA[+el.dataset.clearpurchase].name];
+        write('fonts_purchases', purchases);
+        render();
+      };
+    });
     each('[data-checklinks]', function (el) {
       el.onclick = function () { checkFamilyLinks(DATA[+el.dataset.checklinks], +el.dataset.checklinks); };
     });
@@ -1137,6 +1285,42 @@
     var a = document.createElement('a');
     a.href = url; a.download = name; a.click();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
+  /* Отчёт для клиента: что за шрифты в проекте и на каком основании они использованы. */
+  function buildReport() {
+    var items = DATA.filter(isFav);
+    if (!items.length) return null;
+    var date = new Date().toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'ru-RU');
+    var rows = items.map(function (f) {
+      var p = purchases[f.name] || {};
+      var mine = [p.where, p.date, p.price, p.ref].filter(Boolean).join(', ');
+      var source = /^https?:/i.test(f.license.url || '') ? f.license.url
+        : (/^https?:/i.test(f.license.vendorUrl || '') ? f.license.vendorUrl : '');
+      return '<tr><td><b>' + esc(f.name) + '</b></td><td>' + esc(f.foundry || '—') + '</td>' +
+        '<td>' + esc(f.rule.label || currentStatus(f)) + '</td>' +
+        '<td>' + esc(t[f.rights.commercial]) + '</td>' +
+        '<td>' + esc(mine || '—') + '</td>' +
+        '<td>' + (source ? '<a href="' + esc(source) + '">' + esc(source) + '</a>' : '—') + '</td></tr>';
+    }).join('');
+
+    return '<!doctype html><html lang="' + lang + '"><head><meta charset="utf-8">' +
+      '<title>' + esc(t.reportTitle) + '</title><style>' +
+      'body{font:14px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;color:#121214;max-width:1000px;margin:40px auto;padding:0 20px}' +
+      'h1{font-size:24px;letter-spacing:-.02em;margin:0 0 4px}' +
+      '.date{color:#8b8d95;font-size:13px;margin-bottom:24px}' +
+      'table{border-collapse:collapse;width:100%}' +
+      'th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8b8d95;' +
+      'padding:10px 12px;border-bottom:2px solid #e6e6e9}' +
+      'td{padding:12px;border-bottom:1px solid #e6e6e9;vertical-align:top;font-size:13px}' +
+      'a{color:#126649;word-break:break-all}' +
+      '.note{margin-top:24px;color:#8b8d95;font-size:12px;line-height:1.6}' +
+      '</style></head><body>' +
+      '<h1>' + esc(t.reportTitle) + '</h1>' +
+      '<div class="date">' + esc(fmt(t.reportDate, { date: date })) + '</div>' +
+      '<table><thead><tr>' + t.reportCols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<p class="note">' + esc(t.disclaimer) + '</p></body></html>';
   }
 
   function exportCSV() {
@@ -1177,10 +1361,12 @@
     $('statFamiliesLabel').textContent = t.statFamilies;
     $('statFacesLabel').textContent = t.statFaces;
     $('statUnknownLabel').textContent = t.statUnknown;
-    $('statManualLabel').textContent = t.statManual;
+    $('statManualLabel').textContent = t.checkedProgress;
     $('backup').textContent = t.backup;
     $('restore').textContent = t.restore;
     $('exportCSV').textContent = t.exportCSV;
+    $('report').textContent = t.report;
+    $('report').title = t.reportHint;
     $('clearAll').textContent = t.clearAll;
     $('disclaimer').textContent = t.disclaimer;
     $('viewGrid').textContent = t.viewGrid;
@@ -1295,11 +1481,13 @@
 
     $('search').addEventListener('input', render);
     $('alphabet').addEventListener('change', render);
+    $('foundry').addEventListener('change', render);
     $('sort').addEventListener('change', function () { sortData(); render(); });
 
     $('backup').onclick = function () {
       download('fonts-backup.json', JSON.stringify({
-        version: 1, decisions: decisions, languageEdits: languageEdits, favorites: Array.from(favorites)
+        version: 2, decisions: decisions, languageEdits: languageEdits,
+        favorites: Array.from(favorites), purchases: purchases
       }, null, 2));
     };
     $('restore').onclick = function () { $('restorefile').click(); };
@@ -1309,6 +1497,7 @@
         decisions = Object.assign(decisions, data.decisions || {});
         languageEdits = Object.assign(languageEdits, data.languageEdits || {});
         if (Array.isArray(data.favorites)) data.favorites.forEach(function (k) { favorites.add(String(k).toLocaleLowerCase()); });
+        if (data.purchases) { purchases = Object.assign(purchases, data.purchases); write('fonts_purchases', purchases); }
         write('fonts_decisions', decisions);
         write('fonts_language_edits', languageEdits);
         write('fonts_favorites', Array.from(favorites));
@@ -1317,12 +1506,19 @@
       render();
     };
     $('exportCSV').onclick = exportCSV;
+    $('report').onclick = function () {
+      var html = buildReport();
+      if (!html) { say('reportEmpty', {}, 'bad'); render(); return; }
+      download('fonts-report.html', html, 'text/html;charset=utf-8');
+    };
     $('clearAll').onclick = function () {
       if (!confirm(t.confirmClear)) return;
-      ['fonts_catalog', 'fonts_decisions', 'fonts_language_edits', 'fonts_favorites'].forEach(function (k) {
+      ['fonts_catalog', 'fonts_decisions', 'fonts_language_edits', 'fonts_favorites',
+        'fonts_purchases', 'fonts_compare'].forEach(function (k) {
         localStorage.removeItem(k);
       });
       DATA = []; decisions = {}; languageEdits = {}; favorites = new Set();
+      purchases = {}; compare = new Set();
       message = null; liveOn = false;
       applyStaticText(); render();
     };

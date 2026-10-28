@@ -49,10 +49,13 @@
     <div class="stat"><span id="statManualLabel"></span><b id="statManual">—</b></div>
   </section>
 
+  <section id="compare" class="hidden"></section>
+
   <section class="filters hidden" id="filters">
     <div class="filterrow">
       <label class="search"><input id="search" type="search" placeholder="Поиск…"></label>
       <select id="alphabet"></select>
+      <select id="foundry"></select>
       <select id="sort"></select>
       <div class="seg" role="group">
         <button type="button" id="viewGrid" aria-pressed="true">Плитками</button>
@@ -76,6 +79,7 @@
       <button type="button" id="backup" class="minibtn"></button>
       <button type="button" id="restore" class="minibtn"></button>
       <button type="button" id="exportCSV" class="minibtn"></button>
+      <button type="button" id="report" class="minibtn"></button>
       <button type="button" id="clearAll" class="minibtn"></button>
     </div>
   </section>

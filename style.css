@@ -176,6 +176,27 @@ select{border:1px solid var(--line);background:var(--card);border-radius:11px;pa
 .lictext{background:var(--mut-bg);border-radius:10px;padding:10px 12px;white-space:pre-wrap;
   overflow-wrap:anywhere;max-height:220px;overflow:auto;font-size:12px}
 .links{display:flex;gap:10px;flex-wrap:wrap;font-size:12px}
+/* моя лицензия */
+.purchase{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.pfield{display:flex;flex-direction:column;gap:4px}
+.pfield span{font-size:11px;color:var(--ink-3)}
+.pfield input{border:1px solid var(--line);background:var(--bg);border-radius:9px;
+  padding:8px 10px;font-size:13px;width:100%}
+.purchase .prow{display:flex;gap:8px;grid-column:1/-1}
+.purchase .hint{grid-column:1/-1;font-size:11.5px;color:var(--ink-3);line-height:1.5}
+
+/* сравнение */
+.comparebox{padding:18px 20px}
+.comparehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.comparehead h3{margin:0;font-size:15px;font-weight:620}
+.comparerow{display:flex;gap:16px;align-items:baseline;border-top:1px solid var(--line);padding:12px 0}
+.comparerow:first-of-type{border-top:0;padding-top:0}
+.comparename{min-width:180px;flex:none;font-size:12.5px;font-weight:600;line-height:1.3}
+.comparename span{display:block;font-weight:400;color:var(--ink-3);font-size:11.5px;margin-top:2px}
+.comparesample{font-size:min(var(--sample-size,30px),44px);line-height:1.25;flex:1;
+  overflow:hidden;word-break:break-word}
+.expand.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+
 .sublabel{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);
   margin:12px 0 6px;font-weight:600}
 .linkline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;font-size:12px}
@@ -211,6 +232,9 @@ th:nth-child(8),td:nth-child(8){width:46px}
 footer{color:var(--ink-3);font-size:12px;line-height:1.6;padding:36px 0 48px;max-width:88ch}
 
 @media (max-width:760px){
+  .comparerow{flex-direction:column;gap:6px}
+  .comparename{min-width:0}
+  .purchase{grid-template-columns:1fr}
   .wrap{padding:0 16px}
   header{padding:28px 0 18px}
   h1{font-size:26px}
